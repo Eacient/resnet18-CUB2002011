@@ -120,7 +120,7 @@ if __name__ == "__main__":
   test_dataset = CUB200Dataset(root_dir=root_dir, transform=test_transform, train=False)
 
   train_loader = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory, prefetch_factor=prefetch_factor)
-  test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
+  test_loader = DataLoader(test_dataset, batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, prefetch_factor=prefetch_factor)
 
   pretrained = cfg['model']['pretrained']
   lr = cfg['optimizer']['lr']
