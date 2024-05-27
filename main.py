@@ -1,14 +1,17 @@
 import os
 import time
 import math
+from IPython.terminal.embed import warnings
 from tqdm import tqdm
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 
 from data import CUB200Dataset
 from model import get_resnet18
 from opt import get_param_group, get_opt, get_scheduler
 from utils import Logger
+
 
 def epoch(model, loss_fn, loader, logger, opt=None):
   if not opt:
@@ -67,19 +70,29 @@ def epoch(model, loss_fn, loader, logger, opt=None):
 def train(n_epoch, model, train_loader, test_loader, loss_fn, opt, scheduler, save_dir):
   ckpt_path = os.path.join(save_dir, 'model_best.pth')
   model = model.cuda()
-  logger = Logger()
+  train_logger = Logger()
+  test_logger = Logger()
+  writer = SummaryWriter(save_dir)
   best_acc = -1
   for i in range(n_epoch):
-    train_loss, train_acc = epoch(model, loss_fn, train_loader, logger, opt)
-    test_loss, test_acc = epoch(model, loss_fn, test_loader, logger)
+    train_loss, train_acc = epoch(model, loss_fn, train_loader, train_logger, opt)
+    test_loss, test_acc = epoch(model, loss_fn, test_loader, test_logger)
     print("|  {:>4} |    {:.5f} |   {:.5f} |    {:.5f} |   {:.5f} |"\
             .format(i, train_loss, train_acc, test_loss, test_acc))
+    writer.add_scalar('Train/Loss', train_loss, i)
+    writer.add_scalar('Train/Acc', train_acc, i)
+    writer.add_scalar('Val/Loss', test_loss, i)
+    writer.add_scalar('Val/Acc', test_acc, i)
     if test_acc >= best_acc:
       best_acc = test_acc
       print(f'saved epoch:{i}, best_acc:{best_acc:.3f}')
       torch.save(model.state_dict(), ckpt_path)
-    scheduler.step()
-  logger.plot()
+    if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+      scheduler.step(train_loss)
+    else:
+      scheduler.step()
+  train_logger.plot(mode='epoch', path=os.path.join(save_dir, 'train.png'))
+  test_logger.plot(mode='epoch', path=os.path.join(save_dir, 'test.png'))
 
 if __name__ == "__main__":
   from torchvision import transforms
