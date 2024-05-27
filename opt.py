@@ -18,9 +18,9 @@ def get_param_group(model, lr, pretrained=False):
   return [{'params': base_param, 'lr': 0.1 * lr},
     {'params': fc_param},]
 
-def get_opt(param_group, lr=1e-2, weight_decay=1e-4, name='SGD', momentum=0):
+def get_opt(param_group, lr=1e-2, weight_decay=1e-4, name='SGD', momentum=0, nesterov=False):
   if name == 'SGD':
-    return optim.SGD(param_group, lr=lr, weight_decay=weight_decay, momentum=momentum)
+    return optim.SGD(param_group, lr=lr, weight_decay=weight_decay, momentum=momentum, nesterov=nesterov)
   elif name == 'Adam':
     return optim.Adam(param_group, lr=lr, weight_decay=weight_decay)
   else:

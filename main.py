@@ -87,31 +87,33 @@ if __name__ == "__main__":
   import argparse
   import yaml
 
+  from utils import set_seed
+
   parser = argparse.ArgumentParser()
   parser.add_argument('config', type=str, help='configuration yaml file')
   args = parser.parse_args()
   with open(args.config, 'r') as f:
     cfg = yaml.load(f, yaml.FullLoader)
 
+  set_seed(0)
+
   root_dir = cfg['dataset']['root_dir']
   input_size = cfg['dataset']['input_size']
-
-  num_workers = cfg['dataloader']['num_workers']
-  pin_memory = cfg['dataloader']['pin_memory']
-  prefetch_factor = cfg['dataloader']['prefetch_factor']
-  batch_size = cfg['dataloader']['batch_size']
+  infer_size = cfg['dataset']['infer_size']
+  loader_args = cfg['dataloader']
 
   # Define transforms
   train_transform = transforms.Compose([
       transforms.RandomHorizontalFlip(p=0.5),
       transforms.RandomResizedCrop(size=(input_size, input_size), scale=(0.4, 1), ratio=(0.5, 2)),
-      # transforms.Resize((input_size, input_size)),
+      transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), 
+      transforms.RandomRotation(20),
       transforms.ToTensor(),
       transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # image_net
   ])
 
   test_transform = transforms.Compose([
-      transforms.Resize((input_size, input_size)),
+      transforms.Resize((infer_size, infer_size)),
       transforms.ToTensor(),
       transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # image_net
   ])
@@ -119,8 +121,8 @@ if __name__ == "__main__":
   train_dataset = CUB200Dataset(root_dir=root_dir, transform=train_transform, train=True)
   test_dataset = CUB200Dataset(root_dir=root_dir, transform=test_transform, train=False)
 
-  train_loader = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory, prefetch_factor=prefetch_factor)
-  test_loader = DataLoader(test_dataset, batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, prefetch_factor=prefetch_factor)
+  train_loader = DataLoader(train_dataset, shuffle=True, **loader_args)
+  test_loader = DataLoader(test_dataset, shuffle=False, **loader_args)
 
   pretrained = cfg['model']['pretrained']
   lr = cfg['optimizer']['lr']

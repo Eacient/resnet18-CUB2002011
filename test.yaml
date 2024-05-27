@@ -5,6 +5,7 @@ dataloader:
   prefetch_factor: 8
 dataset:
   input_size: 224
+  infer_size: 256
   root_dir: CUB_200_2011
 model:
   pretrained: true
@@ -15,6 +16,7 @@ optimizer:
   momentum: 0.9
   name: SGD
   weight_decay: 0.0001
+  nesterov: True
 scheduler:
   name: Step
   step_size: 10

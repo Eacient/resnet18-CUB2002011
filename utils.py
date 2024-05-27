@@ -1,5 +1,7 @@
+import random
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 class Logger:
   def __init__(self):
@@ -46,3 +48,9 @@ class Logger:
     plt.show()
     if path is not None:
       plt.savefig(path)
+
+def set_seed(seed=0):
+  random.seed(seed)
+  np.random.seed(seed)
+  torch.manual_seed(seed)
+  torch.cuda.manual_seed(seed)
