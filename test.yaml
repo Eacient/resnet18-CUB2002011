@@ -1,0 +1,20 @@
+dataloader:
+  batch_size: 16
+  num_workers: 2
+  pin_memory: true
+  prefetch_factor: 8
+dataset:
+  input_size: 224
+  root_dir: CUB_200_2011
+model:
+  pretrained: true
+  save_dir: '.'
+n_epochs: 100
+optimizer:
+  lr: 0.01
+  momentum: 0.9
+  name: SGD
+  weight_decay: 0.0001
+scheduler:
+  name: Step
+  step_size: 10
