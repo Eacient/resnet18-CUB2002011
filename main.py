@@ -118,7 +118,7 @@ if __name__ == "__main__":
   # Define transforms
   train_transform = transforms.Compose([
       transforms.RandomHorizontalFlip(p=0.5),
-      transforms.RandomResizedCrop(size=(input_size, input_size), scale=(0.4, 1), ratio=(0.5, 2)),
+      transforms.RandomResizedCrop(size=(input_size, input_size)),
       transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), 
       transforms.RandomRotation(20),
       transforms.ToTensor(),

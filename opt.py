@@ -32,6 +32,6 @@ def get_scheduler(opt, name='Step', **kwargs):
   elif name == 'Poly':
     return optim.lr_scheduler.PolynomialLR(opt, max_epoch=kwargs['max_epoch'], power=2)
   elif name == 'Cosine':
-    return optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=5, T_mult=2, eta_min=0)
+    return optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=20, T_mult=4, eta_min=0)
   elif name == 'rlop':
     return optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.5, patience=4)
