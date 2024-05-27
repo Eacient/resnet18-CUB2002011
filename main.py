@@ -118,9 +118,8 @@ if __name__ == "__main__":
   # Define transforms
   train_transform = transforms.Compose([
       transforms.RandomHorizontalFlip(p=0.5),
-      transforms.RandomResizedCrop(size=(input_size, input_size)),
-      transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), 
-      transforms.RandomRotation(20),
+      transforms.RandomAffine(degrees=20, translate=(0.1, 0.1), scale=(0.8,1.2), shear=0.2),
+      transforms.RandomResizedCrop(size=(input_size, input_size), scale=(0.4, 1), ratio=(0.5, 2)),
       transforms.ToTensor(),
       transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # image_net
   ])

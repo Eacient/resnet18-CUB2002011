@@ -19,4 +19,4 @@ optimizer:
   nesterov: True
 scheduler:
   name: Step
-  step_size: 10
+  step_size: 2

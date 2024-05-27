@@ -28,7 +28,7 @@ def get_opt(param_group, lr=1e-2, weight_decay=1e-4, name='SGD', momentum=0, nes
 
 def get_scheduler(opt, name='Step', **kwargs):
   if name == 'Step':
-    return optim.lr_scheduler.StepLR(opt, step_size=kwargs['step_size'], gamma=0.5)
+    return optim.lr_scheduler.StepLR(opt, step_size=kwargs['step_size'], gamma=0.9)
   elif name == 'Poly':
     return optim.lr_scheduler.PolynomialLR(opt, max_epoch=kwargs['max_epoch'], power=2)
   elif name == 'Cosine':
