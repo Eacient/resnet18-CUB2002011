@@ -151,7 +151,7 @@ def main():
     test_loss, test_acc = one_epoch(epoch, model, test_loader, None, None, val_logger)
     print("|  {:>4} |    {:.5f} |   {:.5f} |"\
             .format(args.epochs, test_loss, test_acc))
-    writer.add_scalar('Val/loss', test_loss, args.epoch)
+    writer.add_scalar('Val/loss', test_loss, args.epochs)
     writer.add_scalar('Val/acc', test_acc, args.epochs)
 
 if __name__ == "__main__":
