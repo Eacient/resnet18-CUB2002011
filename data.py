@@ -1,61 +1,53 @@
-import os
-import pandas as pd
-from PIL import Image
-from torchvision import transforms
-from torch.utils.data import Dataset
+from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
+from torchvision.transforms import v2
 
-class CUB200Dataset(Dataset):
-    def __init__(self, root_dir, transform=None, train=True):
-        """
-        Args:
-            root_dir (string): Directory with all the images and annotation files.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.root_dir = root_dir
-        self.transform = transform
-        self.train = train
+def get_loader(args):
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    )
 
-        # Load the images and labels from the annotations file
-        self.image_files, self.labels = self.load_annotations()
+    augmentations = [
+        transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+        transforms.RandomGrayscale(p=0.2),
+        transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,   
+    ]
 
-    def load_annotations(self):
-        # Paths to the annotation files
-        images_txt = os.path.join(self.root_dir, 'images.txt')
-        labels_txt = os.path.join(self.root_dir, 'image_class_labels.txt')
-        train_test_split_txt = os.path.join(self.root_dir, 'train_test_split.txt')
+    val_transforms = [
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        normalize,
+    ]
 
-        # Load annotations
-        images = pd.read_csv(images_txt, sep=' ', header=None, names=['img_id', 'filepath'])
-        labels = pd.read_csv(labels_txt, sep=' ', header=None, names=['img_id', 'label'])
-        train_test_split = pd.read_csv(train_test_split_txt, sep=' ', header=None, names=['img_id', 'is_training_img'])
+    train_dir = args.data + '/TRAIN'
+    val_dir = args.data + '/VALID'
+    test_dir = args.data + '/TEST'
 
-        # Merge the annotations into a single dataframe
-        data = pd.merge(images, labels, on='img_id')
-        data = pd.merge(data, train_test_split, on='img_id')
+    train_dataset = datasets.ImageFolder(train_dir, transforms.Compose(augmentations))
+    val_dataset = datasets.ImageFolder(val_dir, transforms.Compose(val_transforms))
+    test_dataset = datasets.ImageFolder(test_dir, transforms.Compose(val_transforms))
 
-        # Filter for training or testing images
-        is_training = data['is_training_img'] == 1
-        if self.train:
-            data = data[is_training]
-        else:
-            data = data[~is_training]
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, 
+            shuffle=True, 
+            num_workers=args.workers,
+            pin_memory=True,
+            drop_last=True,)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, 
+            shuffle=False, 
+            num_workers=args.workers,
+            pin_memory=True,
+            drop_last=True,)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, 
+            shuffle=False, 
+            num_workers=args.workers,
+            pin_memory=True,
+            drop_last=True,)
 
-        image_files = data['filepath'].tolist()
-        labels = data['label'].tolist()
-
-        return image_files, labels
-
-    def __len__(self):
-        return len(self.image_files)
-
-    def __getitem__(self, idx):
-        img_name = os.path.join(self.root_dir, 'images', self.image_files[idx])
-        image = Image.open(img_name).convert('RGB')
-        label = self.labels[idx] - 1  # Convert labels to 0-based index
-
-        if self.transform:
-            image = self.transform(image)
-
-        return image, label
+    cutmix = v2.CutMix(num_classes=args.num_classes)
+    mixup = v2.MixUp(num_classes=args.num_classes)
+    cutmix_or_mixup = v2.RandomChoice([cutmix, mixup])
+    return train_loader, val_loader, test_loader, cutmix_or_mixup
