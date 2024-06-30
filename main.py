@@ -1,4 +1,3 @@
-import os
 import time
 import math
 from IPython.terminal.embed import warnings
@@ -7,147 +6,153 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 
-from data import CUB200Dataset
-from model import get_resnet18
-from opt import get_param_group, get_opt, get_scheduler
+from data import get_loader
+from model import get_model
+from opt import get_opt, get_lr_sche
 from utils import Logger
 
 
-def epoch(model, loss_fn, loader, logger, opt=None):
-  if not opt:
-    model.eval()
-  else:
-    model.train()
+import torch
+import time
+from tqdm import tqdm
 
-  data_time = []
-  forward_time = []
-  backward_time = []
-  data_st = time.time()
-  pbar = tqdm(loader)
-  for data in pbar:
-
-    img, y = data
-    img = img.cuda()
-    y = y.cuda(non_blocking=True)
-    data_ed = time.time()
-    data_time.append(data_ed - data_st)
-
-    forward_st = time.time()
-
-    y_pred = model(img)
-    loss = loss_fn(y_pred, y)
-
-    forward_ed = time.time()
-    forward_time.append(forward_ed - forward_st)
-
-    acc = (torch.argmax(y_pred.detach(), dim=1) == y).sum()
-    logger.log_step(loss.detach().cpu().numpy(), acc.detach().cpu().numpy()/img.shape[0], img.shape[0])
-
-    if opt:
-      backward_st = time.time()
-
-      opt.zero_grad()
-      loss.backward()
-      opt.step()
-
-      backward_ed = time.time()
-      backward_time.append(backward_ed - backward_st)
-
-    if opt:
-      pbar.set_description_str('Train')
-      pbar.set_postfix_str(f'loss:{logger.loss_mean:.3f} acc:{logger.acc_mean:.3f} ' 
-                f'data:{sum(data_time)/len(data_time):.5f} forward:{sum(forward_time)/len(forward_time):.5f} '
-                f'backward:{sum(backward_time)/len(backward_time):.5f}')
+loss_fn = torch.nn.CrossEntropyLoss()
+def one_epoch(epoch, model, loader, cutmix_or_mixup, opt, logger):
+    data_time = []
+    infer_time = []
+    if opt is None:
+        model = model.eval()
     else:
-      pbar.set_description_str("Eval")
-      pbar.set_postfix_str(f'loss:{logger.loss_mean:.3f} acc:{logger.acc_mean:.3f} ' 
-                f'data:{sum(data_time)/len(data_time):.5f} forward:{sum(forward_time)/len(forward_time):.5f}')
-
+        model = model.train()
+    pbar = tqdm(loader)
     data_st = time.time()
-  logger.log_epoch()
-  return logger.epoch_loss[-1], logger.epoch_acc[-1]
+    for images, labels in pbar:
+        if opt is not None:
+            images, labels = cutmix_or_mixup(images, labels)
+        images = images.cuda()
+        labels = labels.cuda(non_blocking=True)
+        data_ed = time.time()
+        data_time.append(data_ed - data_st)
+        infer_st = time.time()
+        pred = model(images)
+        loss = loss_fn(pred, labels)
+        if opt is not None:
+            acc = (torch.argmax(pred.detach(), dim=1) == torch.argmax(labels, dim=1)).sum()
+        else:
+            acc = (torch.argmax(pred.detach(), dim=1) == labels).sum()
+        logger.log_step(loss.detach().cpu().numpy(), acc.detach().cpu().numpy()/images.shape[0], images.shape[0])
+        if opt is not None:
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        infer_ed = time.time()
+        infer_time.append(infer_ed - infer_st)
+        if opt:
+            pbar.set_description_str('Train')
+        else:
+            pbar.set_description_str("Eval")
+        pbar.set_postfix_str(f'loss:{logger.loss_mean:.3f} acc:{logger.acc_mean:.3f} ' 
+                f'data:{sum(data_time)/len(data_time):.5f} infer:{sum(infer_time)/len(infer_time):.5f}') 
 
-def train(n_epoch, model, train_loader, test_loader, loss_fn, opt, scheduler, save_dir):
-  ckpt_path = os.path.join(save_dir, 'model_best.pth')
-  model = model.cuda()
-  train_logger = Logger()
-  test_logger = Logger()
-  writer = SummaryWriter(save_dir)
-  best_acc = -1
-  for i in range(n_epoch):
-    train_loss, train_acc = epoch(model, loss_fn, train_loader, train_logger, opt)
-    test_loss, test_acc = epoch(model, loss_fn, test_loader, test_logger)
-    print("|  {:>4} |    {:.5f} |   {:.5f} |    {:.5f} |   {:.5f} |"\
-            .format(i, train_loss, train_acc, test_loss, test_acc))
-    writer.add_scalar('Train/Loss', train_loss, i)
-    writer.add_scalar('Train/Acc', train_acc, i)
-    writer.add_scalar('Val/Loss', test_loss, i)
-    writer.add_scalar('Val/Acc', test_acc, i)
-    if test_acc >= best_acc:
-      best_acc = test_acc
-      print(f'saved epoch:{i}, best_acc:{best_acc:.3f}')
-      torch.save(model.state_dict(), ckpt_path)
-    if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-      scheduler.step(train_loss)
-    else:
-      scheduler.step()
-  train_logger.plot(mode='epoch', path=os.path.join(save_dir, 'train.png'))
-  test_logger.plot(mode='epoch', path=os.path.join(save_dir, 'test.png'))
+        data_st = time.time()
+    logger.log_epoch()
+        
+    return logger.epoch_loss[-1], logger.epoch_acc[-1]
+
+from torch.utils.tensorboard import SummaryWriter
+from collections import namedtuple
+from utils import Logger
+import argparse
+
+def main():
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--arch', type=str, default='resnet')
+    parser.add_argument('--data', type=str, default='/kaggle/input/cifar100/CIFAR100')
+    parser.add_argument('--num_classes', type=int, default=100)
+    parser.add_argument('--workers', type=int, default=4, required=False)
+    parser.add_argument('--batch_size', type=int, default=256) # swin 128
+    parser.add_argument('--opt', type=str, default='sgd') # swin adamw
+    parser.add_argument('--lr', type=float, default=0.1) # swin 5e-6
+    parser.add_argument('--wd', type=float, default=1e-4) # swin 0.05
+    parser.add_argument('--lr_sche', type=str, default='step') #swin cosine
+    parser.add_argument('--epochs', type=int, default=90) # swin 300
+    parser.add_argument('--warmup_epochs', type=int, default=20)
+    parser.add_argument('--base_lr', type=float, default=5e-4)
+    parser.add_argument('--min_lr', type=float, default=5e-7)
+    parser.add_argument('--step_size', type=int, default=30, required=False)
+    parser.add_argument('--gamma', type=float, default=0.1, required=False)
+    
+    args = parser.parse_args()
+#     args = {
+#         'arch': 'resnet',
+#         'data': '/kaggle/input/cifar100/CIFAR100',
+#         'num_classes' : 100,
+#         'workers': 4,
+#         'epochs': 2,
+#         'batch_size': 128,
+#         'opt': 'sgd',
+#         'lr': 0.1,
+#         'wd': 1e-4,
+#         'lr_sche': 'step',
+#         'step_size': 30,
+#         'gamma': 0.1
+#     }
+    
+#     args = {
+#         'arch': 'swin',
+#         'data': '/kaggle/input/cifar100/CIFAR100',
+#         'num_classes' : 100,
+#         'workers': 4,
+#         'epochs': 2,
+#         'batch_size': 64,
+#         'opt': 'adamw',
+#         'lr': 5e-6,
+#         'wd': 0.05,
+#         'lr_sche': 'cosine',
+#         'warmup_epochs': 20,
+#         'base_lr': 5e-4,
+#         'min_lr': 5e-7
+#     }
+    
+    Arg = namedtuple('Arg', args.keys())
+    args = Arg(**args)
+    
+    
+    train_loader, val_loader, test_loader, cutmix_or_mixup = get_loader(args)
+    
+    model = get_model(args)
+    opt = get_opt(args, model)
+    lr_sche = get_lr_sche(args, opt)
+    
+    writer = SummaryWriter('./')
+    train_logger = Logger()
+    val_logger = Logger()
+    
+    model = model.cuda()
+    best_acc = -1
+    for epoch in range(args.epochs):
+        train_loss, train_acc = one_epoch(epoch, model, train_loader, cutmix_or_mixup, opt, train_logger)
+        lr_sche.step()
+        val_loss, val_acc = one_epoch(epoch, model, val_loader, None, None, val_logger)
+#         print("|  {:>4} |    {:.5f} |   {:.5f} |    {:.5f} |   {:.5f} |"\
+#             .format(i, train_loss, train_acc, val_loss, val_acc))
+        writer.add_scalar('Train/loss', train_loss, epoch)
+        writer.add_scalar('Train/acc', train_acc, epoch)
+        writer.add_scalar('Val/loss', val_loss, epoch)
+        writer.add_scalar('Val/acc', val_acc, epoch)
+        if val_acc > best_acc:
+            torch.save(model.state_dict(), 'model_best.pth')
+        if (epoch + 1) % 10 == 0:
+            torch.save(model.state_dict, f'checkpoint_{epoch:03d}.pth')
+            
+    best_param = torch.load('model_best.pth', map_location='cpu')
+    model.load_state_dict(best_param)
+    test_loss, test_acc = one_epoch(epoch, model, test_loader, None, None, val_logger)
+    print("|  {:>4} |    {:.5f} |   {:.5f} |"\
+            .format(args.epochs, test_loss, test_acc))
+    writer.add_scalar('Val/loss', test_loss, args.epoch)
+    writer.add_scalar('Val/acc', test_acc, args.epochs)
 
 if __name__ == "__main__":
-  from torchvision import transforms
-  from torch.utils.data import DataLoader
-  import argparse
-  import yaml
-
-  from utils import set_seed
-
-  parser = argparse.ArgumentParser()
-  parser.add_argument('config', type=str, help='configuration yaml file')
-  args = parser.parse_args()
-  with open(args.config, 'r') as f:
-    cfg = yaml.load(f, yaml.FullLoader)
-
-  set_seed(0)
-
-  root_dir = cfg['dataset']['root_dir']
-  input_size = cfg['dataset']['input_size']
-  infer_size = cfg['dataset']['infer_size']
-  loader_args = cfg['dataloader']
-
-  # Define transforms
-  train_transform = transforms.Compose([
-      transforms.RandomHorizontalFlip(p=0.5),
-      transforms.RandomAffine(degrees=20, translate=(0.1, 0.1), scale=(0.8,1.2), shear=0.2),
-      transforms.RandomResizedCrop(size=(input_size, input_size), scale=(0.4, 1), ratio=(0.5, 2)),
-      transforms.ToTensor(),
-      transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # image_net
-  ])
-
-  test_transform = transforms.Compose([
-      transforms.Resize((infer_size, infer_size)),
-      transforms.ToTensor(),
-      transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # image_net
-  ])
-
-  train_dataset = CUB200Dataset(root_dir=root_dir, transform=train_transform, train=True)
-  test_dataset = CUB200Dataset(root_dir=root_dir, transform=test_transform, train=False)
-
-  train_loader = DataLoader(train_dataset, shuffle=True, **loader_args)
-  test_loader = DataLoader(test_dataset, shuffle=False, **loader_args)
-
-  pretrained = cfg['model']['pretrained']
-  lr = cfg['optimizer']['lr']
-  opt_args = cfg['optimizer']
-  scheduler_args = cfg['scheduler']
-
-  # make model
-  model = get_resnet18(pretrained=pretrained)
-  param_group = get_param_group(model, lr=lr, pretrained=pretrained)
-  opt = get_opt(param_group, **opt_args)
-  scheduler = get_scheduler(opt, **scheduler_args)
-  loss_fn = torch.nn.CrossEntropyLoss()
-
-  n_epoch = cfg['n_epochs']
-  train(n_epoch, model, train_loader, test_loader, loss_fn, opt, scheduler, cfg['model']['save_dir'])
-
+  main()
