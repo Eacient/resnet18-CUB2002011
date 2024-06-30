@@ -115,8 +115,8 @@ def main():
 #         'min_lr': 5e-7
 #     }
     
-    Arg = namedtuple('Arg', args.keys())
-    args = Arg(**args)
+#    Arg = namedtuple('Arg', args.keys())
+#    args = Arg(**args)
     
     
     train_loader, val_loader, test_loader, cutmix_or_mixup = get_loader(args)
